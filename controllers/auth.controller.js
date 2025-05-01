@@ -5,6 +5,8 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { Role } from "../models/role.model.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { Token } from "../models/userToken.js";
+import nodemailer from "nodemailer";
 
 export const register = asyncHandler(async (req, res, next) => {
   const { firstName, lastName, username, email, password, userRole } = req.body;
@@ -44,7 +46,7 @@ export const register = asyncHandler(async (req, res, next) => {
     password: hashPassword,
     userRole: usrRole,
   });
-//  console.log(user);
+  //  console.log(user);
   await user.save();
   res.status(201).json(new ApiResponse(201, "User is created", user));
 });
@@ -53,7 +55,7 @@ export const login = asyncHandler(async (req, res, next) => {
   const { email, password } = req.body;
 
   const user = await User.findOne({ email }).populate("userRole", "role");
-  
+
   // Find role from role collection
   // const role = await Role.findOne({_id:user.userRole})
 
@@ -67,27 +69,121 @@ export const login = asyncHandler(async (req, res, next) => {
   }
 
   const token = jwt.sign(
-    { id: user._id, email: user.email, role:user.userRole.role  },
+    { id: user._id, email: user.email, role: user.userRole.role },
     process.env.SECRET_KEY,
     { expiresIn: "1h" } // Corrected format
   );
-
-  res.status(200).json(new ApiResponse(200, "User is logged in",  token ));
+  const userWithoutPassword = {
+    _id: user._id,
+    email: user.email,
+    username:user.username,
+    firstName: user.firstName,
+    lastName:user.lastName, // if name exists
+    role: user.userRole.role,
+    token:token
+    // include other fields you want to send
+  };
+  // console.log(userWithoutPassword)
+  res.status(200).json(new ApiResponse(200, "User is logged in", userWithoutPassword));
 });
-
 
 export const logout = asyncHandler(async (req, res, next) => {
   try {
-    // To log out, we can clear the token on the client side
-    // But if using cookies, we can clear them like this:
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // Ensures secure cookies in production
-      sameSite: "strict",
-    });
-    
-    res.status(200).json(new ApiResponse(200, "User has been logged out"));
+    res.status(200).json(new ApiResponse(200, "User has been logged out"));;
   } catch (error) {
     next(new ApiError(500, "Something went wrong while logging out"));
   }
+});
+
+export const sendEmail = asyncHandler(async (req, res, next) => {
+  const email = req.body.email;
+
+  const user = await User.findOne({
+    email: { $regex: "^" + email + "$", $options: "i" },
+  });
+  if (!user) {
+    throw new ApiError(404, "User Not Found");
+  }
+
+  const payload = {
+    email: user.email,
+  };
+  const expiryTime = 300;
+  const token = jwt.sign(payload, process.env.SECRET_KEY, {
+    expiresIn: expiryTime,
+  });
+
+  const newToken = new Token({
+    userId: user._id,
+    token: token,
+  });
+
+  const mailTranspoter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: "ecrimereportingsystem@gmail.com",
+      pass: "mbgkqduovlpypang",
+    },
+  });
+  let mailDetails = {
+    from: "ecrimereportingsystem@gmail.com",
+    to: email,
+    subject: "Reset the Password",
+    html: `
+    <html>
+    <head>
+    <title>Password Reset Request</title>
+    </head>
+    <body>
+        <h1>Password Reset Request </h1>
+    <p>Dear ${user.username}, </p>
+    <p>We have received a request to reset the password. To complete the preocss click on button</p>
+    <a href=${process.env.LIVE_URL}/reset-password/${token}><buuton style="background-color:blue; color:white; padding:14px 20px">Reset Password</button></a>
+    <p>Thanks You</p>
+    </body>
+    </html>
+    `,
+  };
+  mailTranspoter.sendMail(mailDetails, async (err, data) => {
+    if (err) {
+      throw new ApiError(500, "Some thing went wrong while sending email");
+    } else {
+      await newToken.save();
+      return next(new ApiResponse(200, "Email sent successfully"));
+    }
+  });
+});
+
+export const resetPassword = asyncHandler(async (req, res, next) => {
+  const token = req.body.token;
+  const newPassword = req.body.password;
+
+  jwt.verify(token, process.env.SECRET_KEY, async (err, data) => {
+    if (err) {
+      throw new ApiError(500, "Password Link is expired");
+    } else {
+      const response = data;
+      const user = await User.findOne({
+        email: { $regex: "^" + response.email + "$", $options: "i" },
+      });
+      const salt = await bcrypt.genSalt(10);
+      const encryptPassword = await bcrypt.hash(newPassword, salt);
+      user.password = encryptPassword;
+      try {
+        const updatedUser = await User.findOneAndUpdate(
+          { _id: user._id },
+          { $set: user },
+          { new: true }
+        );
+        res
+          .status(200)
+          .json(new ApiResponse(200, "Reset Password Successfully"));
+      } catch (error) {
+        throw new ApiError(
+          500,
+          "Something went wrong while reset the password"
+        );
+      }
+    }
+  });
 });
