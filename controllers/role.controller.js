@@ -12,7 +12,6 @@ export const createRole = asyncHandler(async (req, res, next) => {
     throw new ApiError(400, "Role is required");
   }
   const duplicateRole = await Role.findOne({role});
-  console.log(duplicateRole);
   if (duplicateRole) {
     throw new ApiError(400, `${role} role is already exist`);
   }
