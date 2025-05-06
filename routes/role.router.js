@@ -27,12 +27,12 @@ router.route("/getAllRoles").get(getAllRoles);
 
 router
   .route("/getRoleById/:id")
-  .get(verifyToken, getRoleById);
+  .get(getRoleById);
 router
   .route("/updateRole/:id")
-  .put(verifyToken, updateRole);
+  .put(updateRole);
 router
   .route("/deleteRole/:id")
-  .delete(verifyToken, deleteRole);
+  .delete(deleteRole);
 
 export default router;

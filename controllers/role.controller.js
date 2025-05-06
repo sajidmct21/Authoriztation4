@@ -49,13 +49,13 @@ export const getRoleById = asyncHandler(async (req, res, next) => {
 
 // Update Role 
 export const updateRole = asyncHandler(async (req, res, next) => {
-  const {id} = req.params.id
+  const {id} = req.params
   if(id === null){
-    throw new ApiError(401.`${id} does not exist`)
+    throw new ApiError(401, `${id} does not exist`)
   }
 
   if(!mongoose.Types.ObjectId.isValid(id)){
-    throw new ApiError(401.`${id} is not valid`)
+    throw new ApiError(401, `${id} is not valid`)
   }
   const r = await Role.findById(req.params.id)
   if(!r){
